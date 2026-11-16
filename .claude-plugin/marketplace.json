@@ -1,0 +1,12 @@
+{
+  "name": "poe-tools",
+  "owner": { "name": "Sreejan Bandyopadhyay" },
+  "description": "Claude Code plugins by Sreejan Bandyopadhyay.",
+  "plugins": [
+    {
+      "name": "poe",
+      "source": "./",
+      "description": "Phase-orchestrated planning and execution with fresh-context subagents."
+    }
+  ]
+}

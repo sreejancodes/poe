@@ -1,0 +1,6 @@
+{
+  "name": "poe",
+  "description": "Phase-orchestrated planning and execution: plan, split into ~100k-token work units, and execute them with fresh-context subagents that keep file-based progress notes.",
+  "author": { "name": "Sreejan Bandyopadhyay" },
+  "repository": "https://github.com/sreejancodes/poe"
+}
