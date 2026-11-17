@@ -54,9 +54,9 @@ Plugin skills are namespaced, so the command is `/poe:poe`:
 
 ```text
 /poe:poe plan Build an HPV ORF analysis pipeline with tests and reproducible outputs
-/poe:poe split plans/hpv-orf-analysis/plan.md
-/poe:poe execute plans/hpv-orf-analysis/plan.md
-/poe:poe resume plans/hpv-orf-analysis/plan.md
+/poe:poe split poe/hpv-orf-analysis/plan.md
+/poe:poe execute poe/hpv-orf-analysis/plan.md
+/poe:poe resume poe/hpv-orf-analysis/plan.md
 ```
 
 - **Plan** writes `plan.md` from what you asked for, keeping the approach simple and the code human-readable, then stops. Review the file, edit it or ask for changes, and repeat until you are happy with it.
@@ -66,17 +66,21 @@ Plugin skills are namespaced, so the command is `/poe:poe`:
 
 ## Files
 
-Everything for one task is written under `plans/<task-slug>/` in the directory where Claude Code was started. `plans/` is created if it does not exist.
+Everything for one task is written under `poe/<task-slug>/` in the directory where Claude Code was started. `poe/` is created if it does not exist.
 
 ```
-plans/<task-slug>/
+poe/<task-slug>/
   plan.md              what will be built and why
   phases/NN-name.md    one brief per phase, listing its work units
   status.md            state of every phase and unit
   progress/NN-unit.md  running notes written by each worker
+  summary.md           execution summary, written at the end of execute/resume
+  logs/<session-id>/   copies of the Claude Code transcripts (.jsonl) of each session, including worker subagents
 ```
 
-Decide per repository whether to track `plans/` in git or add it to `.gitignore`.
+The copied logs contain the full conversation, including file contents and command output. Normally add `poe/*/logs/` (or all of `poe/`) to `.gitignore`.
+
+Tasks created by older versions in `plans/` can be moved with `mv plans/<slug> poe/<slug>`.
 
 ## Context settings
 

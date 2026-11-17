@@ -16,26 +16,31 @@ You are the **orchestrator**. Keep the parent conversation focused on decisions,
 - `plan <task>` (or a task description without a mode): write `plan.md` only, then stop so the user can review it. Do not split it into phases and do not edit implementation files.
 - `split [plan-path]`: split a reviewed `plan.md` into phases and work units, then stop for user approval. Do not edit implementation files.
 - `execute [plan-path]`: execute a plan that has been split and approved. If the plan has no phase briefs yet, say so and ask the user to run `split` first.
-- When a mode is given no path, use the unambiguous active plan in `plans/`; otherwise ask for the path.
-- `resume [plan-path]`: read `status.md` and the progress notes, compare them with the actual files, tests, and git diff, reconcile discrepancies, and continue only incomplete approved work.
+- When a mode is given no path, use the unambiguous active plan in `poe/`; otherwise ask for the path.
+- `resume [plan-path]`: read `status.md` and the progress notes, compare them with the actual files, tests, and git diff, reconcile discrepancies, and continue only incomplete approved work. When it finishes or stops, write `summary.md` as in Execute mode step 9.
 - For small, single-file or tightly coupled changes, recommend doing the work directly instead of forcing subagents. If the user still requests orchestration, comply.
 
 ## Files
 
-Everything for one task lives in `plans/<short-task-slug>/`, relative to the current working directory (the directory the session was started in, even if that is not the repository root). Create `plans/` and the task directory if they do not exist (`mkdir -p`). Never overwrite the directory of a different task; pick a distinct slug.
+Everything for one task lives in `poe/<short-task-slug>/`, relative to the current working directory (the directory the session was started in, even if that is not the repository root). Create `poe/` and the task directory if they do not exist (`mkdir -p`). Never overwrite the directory of a different task; pick a distinct slug.
 
 ```
-plans/<short-task-slug>/
+poe/<short-task-slug>/
   plan.md              what will be built and why (written by `plan`)
   phases/NN-name.md    one brief per phase, listing its work units (written by `split`)
   status.md            state of every phase and unit, and the next action
   progress/NN-unit.md  running notes written by each worker during execution
+  summary.md           execution summary, overwritten at the end of each `execute`/`resume` run
+  logs/<session-id>/   copies of the Claude Code transcripts of each session that worked on this task
+    <session-id>.jsonl         main (orchestrator) transcript
+    subagents/agent-*.jsonl    worker transcripts
+    subagents/agent-*.meta.json
 ```
 
 ## Plan mode: write `plan.md`
 
 1. Inspect only the relevant repository context, instructions, tests, and environment. Use read-only exploration subagents when exploration would otherwise overwhelm parent context.
-2. Write `plans/<short-task-slug>/plan.md` from what the user wants to do: objective, scope and exclusions, assumptions, the approach, acceptance criteria, risks, and how the result will be tested or validated. This file describes the work itself; it does not mention phases, subagents, or token budgets.
+2. Write `poe/<short-task-slug>/plan.md` from what the user wants to do: objective, scope and exclusions, assumptions, the approach, acceptance criteria, risks, and how the result will be tested or validated. This file describes the work itself; it does not mention phases, subagents, or token budgets.
 3. **Do not overengineer.** Plan the simplest approach that meets the stated requirements:
    - Build only what the user asked for. No speculative features, configuration options, plugin systems, or abstraction layers added "for later".
    - Prefer the tools, libraries, and patterns the repository already uses over introducing new ones.
@@ -65,7 +70,23 @@ Read `plan.md` as it currently is on disk, including any edits the user made by 
 6. Check the worker's claims against the actual files, test outputs, and git diff. For significant or high-risk changes, use a separate fresh-context reviewer before marking the unit verified. Fix or reassign failed units with a new scoped brief.
 7. Update `status.md` after every unit. Keep the parent response concise: phase, tests, blockers, and next action. Reference files rather than returning large transcripts.
 8. Move to the next approved phase after verification. Stop for genuinely ambiguous requirements, security-sensitive changes, destructive operations, deployments, or decisions beyond the approved plan.
-9. At completion, run integration tests, review the full change set, and report what passed, what remains uncertain, and where the files were saved.
+9. At completion, run integration tests, review the full change set, and report what passed, what remains uncertain, and where the files were saved. Write the same report to `summary.md` (what passed, what remains uncertain, blockers, and file locations), overwriting any earlier one; `status.md` stays the source of truth for state.
+
+## Logs
+
+At the end of every mode (`plan`, `split`, `execute`, `resume`), and whenever execution stops for user input, copy this session's transcripts into the task directory:
+
+```sh
+dest="poe/<short-task-slug>/logs/${CLAUDE_SESSION_ID}"
+src=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" -name "${CLAUDE_SESSION_ID}.jsonl" | head -1)
+mkdir -p "$dest"
+cp "$src" "$dest/"
+[ -d "${src%.jsonl}/subagents" ] && cp -R "${src%.jsonl}/subagents" "$dest/"
+```
+
+- Re-running it overwrites the earlier copy with the current, longer transcript, so repeating it is safe.
+- The copy is a snapshot: anything after it (such as the final reply of the turn) is missing until the next copy.
+- If the transcript cannot be found (`src` is empty or `cp` fails), say so in the reply and carry on. A missing log never blocks the task.
 
 ## Progress notes
 
