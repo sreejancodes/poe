@@ -14,6 +14,7 @@ the expected fields are skipped and counted, never fatal.
 """
 
 import argparse
+import base64
 import html
 import json
 import sys
@@ -43,12 +44,16 @@ INTERNAL_RECORD_PREFIXES = ("file-history-",)
 TASK_DOCUMENT_NAMES = ["plan.md", "status.md", "summary.md"]
 TASK_DOCUMENT_FOLDERS = ["phases", "progress"]
 
+# Only the start of a thinking block's signature is decoded (signatures can be
+# several KB). Must be a multiple of 4 so the cut prefix is valid base64.
+SIGNATURE_PREFIX_CHARS = 64
+
 
 @dataclass
 class Step:
     index: int
     timestamp: Optional[str]
-    kind: str  # user, assistant, thinking, tool_call, tool_result, system
+    kind: str  # user, assistant, thinking, narration, tool_call, tool_result, system
     text: str
     anchor: str
     tool_name: Optional[str] = None
@@ -73,6 +78,8 @@ class Transcript:
     cache_creation_tokens: int = 0
     tool_calls: int = 0
     errors: int = 0
+    thinking_blocks: int = 0  # narration not included
+    thinking_recorded: int = 0  # thinking blocks with text
     first_timestamp: Optional[str] = None
     last_timestamp: Optional[str] = None
     cost_usd: Optional[float] = None
@@ -177,6 +184,25 @@ def system_text(record: dict) -> str:
     if hook_errors:
         text += "\nhook errors: " + json.dumps(hook_errors, indent=2)
     return text
+
+
+def thinking_block_kind(signature) -> str:
+    """Return "narration" or "thinking" for an assistant thinking block.
+
+    Claude Code also writes short progress updates as thinking blocks. Their
+    signature starts with a tag that reads "narration" once base64-decoded.
+    This is undocumented, so anything unexpected falls back to "thinking".
+    """
+    if not isinstance(signature, str) or not signature:
+        return "thinking"
+    prefix = signature[:SIGNATURE_PREFIX_CHARS]
+    # Pad a short signature so it decodes even without its trailing "=".
+    prefix += "=" * (-len(prefix) % 4)
+    try:
+        decoded = base64.b64decode(prefix, validate=True)
+    except ValueError:  # binascii.Error is a ValueError
+        return "thinking"
+    return "narration" if b"narration" in decoded else "thinking"
 
 
 def add_usage(transcript: Transcript, usage) -> None:
@@ -295,7 +321,13 @@ class TimelineBuilder:
         if block_type == "text":
             self.add_step(record, "assistant", str(block.get("text", "")))
         elif block_type in ("thinking", "redacted_thinking"):
-            self.add_step(record, "thinking", str(block.get("thinking") or ""))
+            text = str(block.get("thinking") or "")
+            kind = thinking_block_kind(block.get("signature"))
+            self.add_step(record, kind, text)
+            if kind == "thinking":
+                self.transcript.thinking_blocks += 1
+                if text:
+                    self.transcript.thinking_recorded += 1
         elif block_type == "tool_use":
             tool_use_id = block.get("id")
             step = self.add_step(
@@ -407,6 +439,7 @@ KIND_LABELS = {
     "user": "user",
     "assistant": "assistant",
     "thinking": "thinking",
+    "narration": "narration",
     "tool_call": "tool call",
     "tool_result": "tool result",
     "system": "system",
@@ -416,14 +449,14 @@ CSS = """
 :root {
   --bg: #f7f7f8; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b73;
   --border: #dcdce0; --link: #0b5cad; --code-bg: #f0f0f3;
-  --user: #2f6fd6; --assistant: #2e8b57; --thinking: #9a9aa3; --tool-call: #7b4fc9;
+  --user: #2f6fd6; --assistant: #2e8b57; --thinking: #9a9aa3; --narration: #b0568f; --tool-call: #7b4fc9;
   --tool-result: #1f8a99; --system: #c58a12; --error: #c62828; --error-bg: #fdecec;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #17171a; --panel: #212125; --text: #e6e6ea; --muted: #9d9da6;
     --border: #3a3a40; --link: #7ab4ff; --code-bg: #2a2a2f;
-    --user: #6b9cf0; --assistant: #5cc28a; --thinking: #77777f; --tool-call: #a983ec;
+    --user: #6b9cf0; --assistant: #5cc28a; --thinking: #77777f; --narration: #d98ac0; --tool-call: #a983ec;
     --tool-result: #4fbccb; --system: #e0aa3e; --error: #ff6b6b; --error-bg: #3a1f22;
   }
 }
@@ -464,6 +497,7 @@ details > summary { cursor: pointer; }
 .kind-user { border-left-color: var(--user); }
 .kind-assistant { border-left-color: var(--assistant); }
 .kind-thinking { border-left-color: var(--thinking); }
+.kind-narration { border-left-color: var(--narration); }
 .kind-tool_call { border-left-color: var(--tool-call); }
 .kind-tool_result { border-left-color: var(--tool-result); }
 .kind-system { border-left-color: var(--system); }
@@ -572,6 +606,12 @@ def models_text(transcripts: List[Transcript]) -> str:
     return ", ".join(sorted(models)) or "n/a"
 
 
+def thinking_text(transcripts: List[Transcript]) -> str:
+    recorded = sum(t.thinking_recorded for t in transcripts)
+    total = sum(t.thinking_blocks for t in transcripts)
+    return f"thinking recorded: {recorded} of {total} blocks"
+
+
 def totals_line(transcripts: List[Transcript], duration: Optional[float]) -> str:
     """One escaped line of totals for a transcript or a group of transcripts."""
     tool_calls = sum(t.tool_calls for t in transcripts)
@@ -579,7 +619,7 @@ def totals_line(transcripts: List[Transcript], duration: Optional[float]) -> str
     skipped = sum(t.skipped for t in transcripts)
     return escape(
         f"models: {models_text(transcripts)} · tool calls {tool_calls} · errors {errors} · "
-        f"duration {format_duration(duration)} · tokens: {tokens_line(transcripts)} · "
+        f"{thinking_text(transcripts)} · duration {format_duration(duration)} · tokens: {tokens_line(transcripts)} · "
         f"skipped records {skipped}"
     )
 
@@ -648,6 +688,7 @@ def render_overview(task: Task, generated: str) -> str:
         card("Workers", str(workers)),
         card("Tool calls", str(sum(t.tool_calls for t in transcripts))),
         card("Errors", str(sum(t.errors for t in transcripts))),
+        card("Thinking", thinking_text(transcripts)),
         card("Tokens", f"{total_tokens:,}"),
         card("Cost", format_cost(task_cost(task))),
         card("Duration", format_duration(task_duration(task))),
@@ -721,11 +762,8 @@ def render_step(step: Step) -> str:
             f'<a href="#{escape(transcript_id(step.worker))}">worker: {escape(step.worker.actor)}</a>'
         )
 
-    if step.kind == "thinking":
-        if step.text:
-            body = f"<details><summary>thinking ({len(step.text)} characters)</summary><pre>{escape(step.text)}</pre></details>"
-        else:
-            body = '<div class="meta">(thinking text not recorded)</div>'
+    if step.kind == "thinking" and not step.text:
+        body = '<div class="meta">(thinking text not recorded; see README: Thinking text in the report)</div>'
     elif step.kind in ("tool_call", "tool_result"):
         body = collapsible_text(step.text, TOOL_PREVIEW_LINES)
     else:

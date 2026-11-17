@@ -93,6 +93,19 @@ python3 <plugin>/skills/poe/scripts/poe_report.py poe/<task-slug>
 
 Tasks created by older versions in `plans/` can be moved with `mv plans/<slug> poe/<slug>`.
 
+## Thinking text in the report
+
+The report can only show thinking that Claude Code recorded in its transcripts. By default it records none, so each thinking step reads "thinking text not recorded". The overview and each transcript's totals show "thinking recorded: N of M blocks", so you can see whether it was on for a run.
+
+To record it:
+
+- Interactive sessions: set `"showThinkingSummaries": true` in `~/.claude/settings.json` (all projects) or in the project's `.claude/settings.json`. This also shows the summaries in the terminal. Workers are expected to inherit the setting from the session that starts them.
+- Headless `claude -p` ignores that setting. Pass the flag instead: `claude -p --thinking-display summarized "..."`.
+
+The recorded text is a summary of the reasoning, not the raw reasoning. Sessions that ran without it cannot be filled in later.
+
+Steps labelled "narration" are short progress updates Claude Code writes alongside thinking; they are shown as they are and not counted as thinking.
+
 ## Context settings
 
 The 100k figure is a soft target, not a hard cap. A worker nearing it finishes the step it is in the middle of, updates its progress notes, and returns. The orchestrator then starts a fresh worker from those notes.

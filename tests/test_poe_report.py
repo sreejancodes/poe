@@ -45,7 +45,7 @@ class LoadFixtureTaskTest(unittest.TestCase):
 
     def test_step_counts_and_kinds(self):
         self.assertEqual(len(self.main.steps), 13)
-        self.assertEqual(len(self.worker.steps), 4)
+        self.assertEqual(len(self.worker.steps), 8)
         kinds = [step.kind for step in self.main.steps]
         self.assertEqual(
             kinds,
@@ -53,6 +53,16 @@ class LoadFixtureTaskTest(unittest.TestCase):
             + ["tool_call", "tool_result"] * 4
             + ["system", "assistant"],
         )
+        worker_kinds = [step.kind for step in self.worker.steps]
+        self.assertEqual(
+            worker_kinds,
+            ["user", "tool_call", "tool_result", "thinking", "thinking", "narration", "thinking", "assistant"],
+        )
+
+    def test_thinking_counts_exclude_narration(self):
+        # main: one thinking block with text; worker: two with text, one empty.
+        self.assertEqual((self.main.thinking_recorded, self.main.thinking_blocks), (1, 1))
+        self.assertEqual((self.worker.thinking_recorded, self.worker.thinking_blocks), (2, 3))
 
     def test_anchors_are_unique(self):
         anchors = [step.anchor for step in self.main.steps + self.worker.steps]
@@ -94,6 +104,11 @@ class LoadFixtureTaskTest(unittest.TestCase):
         self.assertEqual(agent_result.text, "Worker done: sample.txt written.")
         self.assertEqual(self.main.steps[-2].text, "Stop hook ran.")
 
+    def test_garbage_signature_stays_thinking(self):
+        garbage = self.worker.steps[6]
+        self.assertEqual(garbage.kind, "thinking")
+        self.assertEqual(garbage.text, "Thinking with a garbage signature.")
+
     def test_worker_linked_by_tool_use_id(self):
         call = find_call(self.main, "toolu_agent_1")
         self.assertIs(call.worker, self.worker)
@@ -129,6 +144,25 @@ class LoadFixtureTaskTest(unittest.TestCase):
         self.assertIsNone(self.worker.cost_usd)
 
 
+class ThinkingBlockKindTest(unittest.TestCase):
+    NARRATION_SIGNATURE = "CAQSxQYKEQgTGAI4AUIJbmFycmF0aW9u"
+    THINKING_SIGNATURE = "CAQS0AUKEAgTGAI4AUIIdGhpbmtpbmc="
+
+    def test_narration_tag(self):
+        self.assertEqual(poe_report.thinking_block_kind(self.NARRATION_SIGNATURE), "narration")
+        # A long signature is decoded only from its start.
+        long_signature = self.NARRATION_SIGNATURE + "A" * 5000
+        self.assertEqual(poe_report.thinking_block_kind(long_signature), "narration")
+
+    def test_thinking_tag(self):
+        self.assertEqual(poe_report.thinking_block_kind(self.THINKING_SIGNATURE), "thinking")
+        self.assertEqual(poe_report.thinking_block_kind(self.THINKING_SIGNATURE.rstrip("=")), "thinking")
+
+    def test_missing_or_unreadable_signature_falls_back_to_thinking(self):
+        for signature in (None, "", "x", "!!!not-base64!!!", 123, ["CAQS"]):
+            self.assertEqual(poe_report.thinking_block_kind(signature), "thinking", signature)
+
+
 class LoadTaskWithoutLogsTest(unittest.TestCase):
     def test_task_without_logs_has_no_sessions(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -159,6 +193,14 @@ def section(report, section_id):
     return report[start:report.index("</section>", start)]
 
 
+def step_html(report, anchor):
+    """The HTML of one rendered step, up to the start of the next one."""
+    start = report.index(f'id="{anchor}"')
+    start = report.rindex("<div", 0, start)
+    end = report.find('<div class="step ', start + 1)
+    return report[start:end if end != -1 else len(report)]
+
+
 class RenderFixtureReportTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -169,6 +211,51 @@ class RenderFixtureReportTest(unittest.TestCase):
     def test_script_string_appears_only_escaped(self):
         self.assertNotIn("<script", self.report)
         self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", self.report)
+
+    def test_script_string_in_thinking_escaped(self):
+        self.assertIn("&lt;script&gt;alert(2)&lt;/script&gt;", self.report)
+        self.assertNotIn("<script>alert(2)", self.report)
+
+    def test_thinking_text_visible_not_collapsed(self):
+        step = self.task.sessions[0].workers[0].steps[3]
+        html_of_step = step_html(self.report, step.anchor)
+        self.assertIn('<span class="kind">thinking</span>', html_of_step)
+        self.assertIn("<pre>Summary: the file was written.", html_of_step)
+        self.assertNotIn("<details", html_of_step)
+
+    def test_long_thinking_text_shows_first_lines(self):
+        text = "\n".join(f"thought {n}" for n in range(30))
+        step = poe_report.Step(index=1, timestamp=None, kind="thinking", text=text, anchor="step-x-1")
+        rendered = poe_report.render_step(step)
+        # The first lines are in the <summary>, which shows while collapsed.
+        summary = re.search(r"<summary>(.*?)</summary>", rendered, re.S).group(1)
+        self.assertIn("thought 0\nthought 1", summary)
+        self.assertNotIn("thought 29", summary)
+        self.assertIn("thought 29", rendered)
+
+    def test_narration_labelled(self):
+        step = self.task.sessions[0].workers[0].steps[5]
+        html_of_step = step_html(self.report, step.anchor)
+        self.assertIn('class="step kind-narration"', html_of_step)
+        self.assertIn('<span class="kind">narration</span>', html_of_step)
+        self.assertIn("Wrote sample.txt, so I&#x27;m reporting back.", html_of_step)
+        self.assertIn(".kind-narration", self.report)
+
+    def test_empty_thinking_message(self):
+        step = self.task.sessions[0].workers[0].steps[4]
+        html_of_step = step_html(self.report, step.anchor)
+        self.assertIn("(thinking text not recorded; see README: Thinking text in the report)", html_of_step)
+
+    def test_thinking_recorded_counts(self):
+        overview = section(self.report, "overview")
+        self.assertIn('<div class="label">Thinking</div><div class="value">thinking recorded: 3 of 4 blocks</div>',
+                      overview)
+        worker_section = self.report[self.report.index('id="transcript-agent-a0000000000000001"'):]
+        self.assertIn("thinking recorded: 2 of 3 blocks", worker_section)
+        self.assertIn("orchestrator only: models: fake-model-1 · tool calls 4 · errors 2 · "
+                      "thinking recorded: 1 of 1 blocks", self.report)
+        self.assertIn("session (orchestrator and workers): models: fake-model-1, fake-model-2 · "
+                      "tool calls 5 · errors 2 · thinking recorded: 3 of 4 blocks", self.report)
 
     def test_no_external_urls_and_no_javascript(self):
         self.assertIsNone(re.search(r'(src|href)="https?:', self.report))
