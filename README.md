@@ -57,12 +57,14 @@ Plugin skills are namespaced, so the command is `/poe:poe`:
 /poe:poe split poe/hpv-orf-analysis/plan.md
 /poe:poe execute poe/hpv-orf-analysis/plan.md
 /poe:poe resume poe/hpv-orf-analysis/plan.md
+/poe:poe report poe/hpv-orf-analysis/plan.md
 ```
 
 - **Plan** writes `plan.md` from what you asked for, keeping the approach simple and the code human-readable, then stops. Review the file, edit it or ask for changes, and repeat until you are happy with it.
 - **Split** takes the reviewed `plan.md` and splits it into phases and work units, each sized for one subagent at roughly 100k tokens. It then stops for approval.
 - **Execute** hands each work unit to a fresh `poe:phase-worker` subagent, which writes progress notes as it works. The orchestrator verifies each unit before moving on.
 - **Resume** uses the status file and progress notes to continue safely.
+- **Report** copies the session's logs and (re)builds `report.html`, a step-by-step view of what the orchestrator and each worker did. Execute and resume also build it automatically at the end, after `summary.md` and the log copy; if the build fails, the reply says so and the task carries on.
 
 ## Files
 
@@ -75,10 +77,19 @@ poe/<task-slug>/
   status.md            state of every phase and unit
   progress/NN-unit.md  running notes written by each worker
   summary.md           execution summary, written at the end of execute/resume
+  report.html          step-by-step report built from the files above and logs/
   logs/<session-id>/   copies of the Claude Code transcripts (.jsonl) of each session, including worker subagents
 ```
 
-The copied logs contain the full conversation, including file contents and command output. Normally add `poe/*/logs/` (or all of `poe/`) to `.gitignore`.
+The copied logs contain the full conversation, including file contents and command output, and so does `report.html`. Normally add `poe/*/logs/` and `poe/*/report.html` (or all of `poe/`) to `.gitignore`.
+
+To build the report by hand, without a Claude Code session (needs Python 3.9 or later, standard library only):
+
+```sh
+python3 <plugin>/skills/poe/scripts/poe_report.py poe/<task-slug>
+```
+
+`<plugin>` is this repository, or the installed plugin directory. The script writes `poe/<task-slug>/report.html` and prints its path. It is a single HTML file with no external resources, so it opens offline.
 
 Tasks created by older versions in `plans/` can be moved with `mv plans/<slug> poe/<slug>`.
 
@@ -96,6 +107,7 @@ The `CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable takes precedence over
 .claude-plugin/plugin.json        plugin manifest
 .claude-plugin/marketplace.json   marketplace listing this repo as the plugin source
 skills/poe/SKILL.md               the /poe:poe orchestrator skill
+skills/poe/scripts/poe_report.py  builds report.html for a task
 agents/phase-worker.md            the worker subagent
 ```
 
