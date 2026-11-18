@@ -1,7 +1,7 @@
 ---
 name: poe
 description: Plan, decompose, and execute complex coding or analysis tasks in phases using fresh-context subagents and file-based progress notes. Use when the user explicitly requests staged multi-agent work, context-conscious orchestration, or continuation of an existing phase plan.
-argument-hint: "[plan|split|execute|resume] [task description or plan path]"
+argument-hint: "[plan|split|execute|resume|report] [task description or plan path]"
 disable-model-invocation: true
 ---
 
@@ -17,7 +17,8 @@ You are the **orchestrator**. Keep the parent conversation focused on decisions,
 - `split [plan-path]`: split a reviewed `plan.md` into phases and work units, then stop for user approval. Do not edit implementation files.
 - `execute [plan-path]`: execute a plan that has been split and approved. If the plan has no phase briefs yet, say so and ask the user to run `split` first.
 - When a mode is given no path, use the unambiguous active plan in `poe/`; otherwise ask for the path.
-- `resume [plan-path]`: read `status.md` and the progress notes, compare them with the actual files, tests, and git diff, reconcile discrepancies, and continue only incomplete approved work. When it finishes or stops, write `summary.md` as in Execute mode step 9.
+- `resume [plan-path]`: read `status.md` and the progress notes, compare them with the actual files, tests, and git diff, reconcile discrepancies, and continue only incomplete approved work. When it finishes or stops, write `summary.md`, copy the logs, and build the report as in Execute mode step 9.
+- `report [plan-path]`: copy this session's logs as in the Logs section, build the report as in the Report section, and give the user the path of `report.html`. Do not edit the task's other files or any implementation files.
 - For small, single-file or tightly coupled changes, recommend doing the work directly instead of forcing subagents. If the user still requests orchestration, comply.
 
 ## Files
@@ -31,6 +32,7 @@ poe/<short-task-slug>/
   status.md            state of every phase and unit, and the next action
   progress/NN-unit.md  running notes written by each worker during execution
   summary.md           execution summary, overwritten at the end of each `execute`/`resume` run
+  report.html          step-by-step report built from the files above and logs/
   logs/<session-id>/   copies of the Claude Code transcripts of each session that worked on this task
     <session-id>.jsonl         main (orchestrator) transcript
     subagents/agent-*.jsonl    worker transcripts
@@ -70,11 +72,11 @@ Read `plan.md` as it currently is on disk, including any edits the user made by 
 6. Check the worker's claims against the actual files, test outputs, and git diff. For significant or high-risk changes, use a separate fresh-context reviewer before marking the unit verified. Fix or reassign failed units with a new scoped brief.
 7. Update `status.md` after every unit. Keep the parent response concise: phase, tests, blockers, and next action. Reference files rather than returning large transcripts.
 8. Move to the next approved phase after verification. Stop for genuinely ambiguous requirements, security-sensitive changes, destructive operations, deployments, or decisions beyond the approved plan.
-9. At completion, run integration tests, review the full change set, and report what passed, what remains uncertain, and where the files were saved. Write the same report to `summary.md` (what passed, what remains uncertain, blockers, and file locations), overwriting any earlier one; `status.md` stays the source of truth for state.
+9. At completion, run integration tests, review the full change set, and report what passed, what remains uncertain, and where the files were saved. Write the same report to `summary.md` (what passed, what remains uncertain, blockers, and file locations), overwriting any earlier one; `status.md` stays the source of truth for state. Then copy the logs (see Logs) and build the report (see Report).
 
 ## Logs
 
-At the end of every mode (`plan`, `split`, `execute`, `resume`), and whenever execution stops for user input, copy this session's transcripts into the task directory:
+At the end of every mode (`plan`, `split`, `execute`, `resume`, `report`), and whenever execution stops for user input, copy this session's transcripts into the task directory:
 
 ```sh
 dest="poe/<short-task-slug>/logs/${CLAUDE_SESSION_ID}"
@@ -87,6 +89,17 @@ cp "$src" "$dest/"
 - Re-running it overwrites the earlier copy with the current, longer transcript, so repeating it is safe.
 - The copy is a snapshot: anything after it (such as the final reply of the turn) is missing until the next copy.
 - If the transcript cannot be found (`src` is empty or `cp` fails), say so in the reply and carry on. A missing log never blocks the task.
+
+## Report
+
+At the end of `execute` and `resume` (after `summary.md` and the log copy), and in `report` mode, build `report.html` from the task directory:
+
+```sh
+python3 "${CLAUDE_SKILL_DIR}/scripts/poe_report.py" poe/<short-task-slug>
+```
+
+- The script writes `poe/<short-task-slug>/report.html` and prints its path. Re-running it replaces the earlier report.
+- If it fails (for example, `python3` is missing or the command is refused), say so in the reply and carry on. A missing report never blocks the task.
 
 ## Progress notes
 

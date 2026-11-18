@@ -1,0 +1,1 @@
+{"agentType":"web-fetch","isBuiltIn":true,"spawnMode":"dontAsk","description":"Check CLAUDE_SKILL_DIR in skills docs","toolUseId":"toolu_01RJgWBMJvXH6XgucPYr3BC8","parentAgentId":"a01ccc7e6a7888951","spawnDepth":2,"requestShape":"foreground","requestNonInteractive":true,"pickedEffortModel":"claude-opus-5-5","finished":true}
