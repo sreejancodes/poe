@@ -66,6 +66,8 @@ Plugin skills are namespaced, so the command is `/poe:poe`:
 - **Resume** uses the status file and progress notes to continue safely.
 - **Report** copies the session's logs and (re)builds `report.html`, a step-by-step view of what the orchestrator and each worker did. Execute and resume also build it automatically at the end, after `summary.md` and the log copy; if the build fails, the reply says so and the task carries on.
 
+Output is deliberately terse: replies point to files instead of repeating them, and plan and split replies end with the next command to paste.
+
 ## Files
 
 Everything for one task is written under `poe/<task-slug>/` in the directory where Claude Code was started. `poe/` is created if it does not exist.
