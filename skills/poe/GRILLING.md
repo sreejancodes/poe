@@ -24,6 +24,11 @@ Adapted from the `grilling` and `domain-modeling` skills by Matt Pocock: https:/
 ## Questions
 
 - Ask exactly one question per turn: the frontier decision that most other decisions depend on.
+- Question counter:
+  - Before Q1, estimate N = all open decisions known so far (whole tree, not just frontier), excl. final confirm. `grill <plan-path>` → only the open points being grilled.
+  - Prefix every `question`: `Q<k> of ~<N>: `. `~` always shown. `header` unchanged.
+  - After each answer, re-estimate N (asked + still open); show the new N on the next question. k +1 per question, never resets within a run; new run after `/clear` restarts at Q1.
+  - Final "Matches your understanding?" confirm: no prefix, not counted.
 - Ask it with `AskUserQuestion`, one question per call. Never batch questions.
   - `question`: terse, self-contained (the dialog may be all the user sees); include any finding it depends on.
   - `header`: decision label, ≤12 chars.
@@ -31,7 +36,7 @@ Adapted from the `grilling` and `domain-modeling` skills by Matt Pocock: https:/
   - No manual "Other" option (added automatically). `multiSelect` only when answers genuinely combine.
   - `preview` only when comparing concrete artifacts (layouts, snippets).
 - Open-ended decision (no sensible option list, e.g. naming a term) → still the dialog: 2 best candidates as options; user types own via "Other".
-- Tool unavailable or call rejected → fall back to plain text: one question + `Rec:` line, then stop.
+- Tool unavailable or call rejected → fall back to plain text: one question (same `Q<k> of ~<N>: ` prefix) + `Rec:` line, then stop.
 - Pick the next question only after the answer; an answer may add, remove, or change later questions.
 - Recommendations follow SKILL.md Plan step 3 "Do not overengineer": simplest option meeting the stated need, repo's existing tools/patterns, no speculative features or config.
 - Skip trivia: no question whose answer would not change the plan. A clear task may need one question or none.
