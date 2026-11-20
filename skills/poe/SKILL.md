@@ -63,7 +63,7 @@ Notebooks, figures, and intermediates live outside `poe/`, in the project path n
 ## Plan mode: write `plan.md`
 
 1. Inspect only the relevant repository context, instructions, tests, and environment. Use read-only exploration subagents when exploration would otherwise overwhelm parent context. Also read `poe/docs/` if present.
-2. Write `poe/<short-task-slug>/plan.md` from what the user wants to do: objective, scope and exclusions, assumptions, the approach, acceptance criteria, risks, and how the result will be tested or validated. This file describes the work itself; it does not mention phases, subagents, or token budgets. Keep it short: do not restate the request, and give background only where it shapes a decision. Analysis task → plan also gives: question, data paths, notebook/output path, environment (incl. how to call `jupyter`).
+2. Write `poe/<short-task-slug>/plan.md` from what the user wants to do: objective, scope and exclusions, assumptions, the approach, acceptance criteria, risks, and how the result will be tested or validated. This file describes the work itself; it does not mention phases, subagents, or token budgets. Keep it short: do not restate the request, and give background only where it shapes a decision. Analysis task → plan also gives: question, data paths, notebook/output path, environment (incl. how to call `jupyter`), first analysis (`First analysis`).
 3. **Do not overengineer.** Plan the simplest approach that meets the stated requirements:
    - Build only what the user asked for. No speculative features, configuration options, plugin systems, or abstraction layers added "for later".
    - Prefer the tools, libraries, and patterns the repository already uses over introducing new ones.
@@ -84,7 +84,8 @@ Notebooks, figures, and intermediates live outside `poe/`, in the project path n
 2. Argument is an existing `plan.md` → load it; grill only its assumptions and open or risky points. Otherwise → new slug and a `plan.md` holding only `## Decisions`.
 3. Ask one question, then stop. After the answer, write as GRILLING.md says, then ask the next.
 4. Frontier empty → ask the user to confirm shared understanding.
-5. Confirmed → write or update the full plan (Plan steps 2–3; keep `## Decisions`; link new ADRs), then reply as in Plan step 5 (`Next:` split block).
+5. Confirmed → write or update the full plan (Plan steps 2–3; keep `## Decisions`; link new ADRs), then reply as in Plan step 5.
+   `Next:` command: analysis-only task → `/poe:poe analyse <plan path>`; coding or mixed → `split <plan path>`, mixed adds one reply bullet: `analyse <plan path>` works after execute.
 6. Copy the logs (see Logs) at the end of the mode.
 
 ## Split mode: split `plan.md` into phases and work units
@@ -122,9 +123,10 @@ Read `plan.md` as it currently is on disk, including any edits the user made by 
 
 One analysis at a time; user picks each next one. `NN` continues across `analyse` runs within a task.
 
-1. No plan → write short `plan.md` (question, data, paths, environment), stop for review as Plan step 5, `Next:` block holding `/poe:poe analyse <plan path>`. Plan exists → continue.
+1. No plan → as Plan step 4: open decisions → Grill mode with the task; else write short `plan.md` (Plan step 2 analysis fields). Either way stop for review as Plan step 5, `Next:` block holding `/poe:poe analyse <plan path>`.
+   Plan exists, analysis fields (Plan step 2) missing → look up facts; grill the rest (GRILLING.md method, `## Decisions` appended); write fields into `plan.md`; continue. Else → continue.
 2. Catch-up check (below).
-3. Dispatch fresh `phase-worker` (as Execute step 2) with: question for this analysis, notebook path, record path `analysis/NN-name.md`, previous record path, log path `poe/docs/ANALYSIS_LOG.md`.
+3. Dispatch fresh `phase-worker` (as Execute step 2) with: question for this analysis (first: plan's `First analysis`; later: user's pick), notebook path, record path `analysis/NN-name.md`, previous record path, log path `poe/docs/ANALYSIS_LOG.md`.
 4. Worker: add tagged cells under a markdown heading `## NN: <question>`, execute, write record, append log entry, return ≤5 bullets + 2–3 proposed next analyses.
 5. Orchestrator: verify notebook executed without error (no `"output_type": "error"`) and record exists; update `status.md`; ask next analysis via `AskUserQuestion` (worker's options + done); write the chosen option into the record's `## Next`; repeat from 3.
 6. Need a tool → `plan`/`split`/`execute` on same task dir; phases and analyses share `status.md`. Back → `analyse` again.

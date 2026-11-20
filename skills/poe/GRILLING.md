@@ -21,6 +21,13 @@ Adapted from the `grilling` and `domain-modeling` skills by Matt Pocock: https:/
 - Decisions (what the user wants, trade-offs only they can weigh): ask.
 - Missing detail with an obvious default = not a question. Use the default; note it under Assumptions.
 
+## Analysis tasks
+
+- Applies when the request is data analysis, or grill was entered from `analyse`.
+- Tree includes the five analysis fields: question, data paths, notebook/output path, environment + `jupyter` call, first analysis (`First analysis`).
+- Facts among them (where the data is, which environments exist, whether `jupyter` is available): look up, never ask.
+- Fields already in the plan: not re-asked.
+
 ## Questions
 
 - Ask exactly one question per turn: the frontier decision that most other decisions depend on.
