@@ -16,3 +16,36 @@ You are a **single-unit execution worker**, not a project orchestrator.
 6. Aim to finish within roughly 100k tokens of context. This is a soft target. If you are nearing it, or the unit proves broader than expected, finish the step you are in the middle of, bring the notes up to date, and return `partial` so that a fresh worker can take over. Do not stop mid-edit to respect the number, and do not carry on indefinitely either.
 7. The `autoCompactWindow` of 150000 is a backstop above the target, not a budget and not a hard consumption limit. Never infer an exact token count from it.
 8. Do not commit, push, merge, deploy, or perform destructive operations without explicit authorization.
+
+## Analysis units
+
+Apply when the brief gives a notebook path. Brief also gives: question, `NN`, record path, previous record path, log path; the task's `plan.md` names the environment. Rules 1–8 still apply.
+
+- Cells: append to the given notebook (absent → create it, Python 3 kernel) under a markdown heading `## NN: <question>`. Tag every cell you write with `poe:<slug>/<NN>` in cell metadata `tags` (`"metadata": {"tags": ["poe:<slug>/<NN>"]}`). Leave untagged and `poe:manual` cells (untracked work) alone.
+- Fewest files: human reads every cell. Default: append to the task's existing notebook. New notebook only when full re-run exceeds ~5 min or the question changes topic; then save intermediates the next notebook loads, and state the reason in the record.
+- No dead cells: remove failed attempts from the notebook; describe them in the record.
+- Before writing cells: note the notebook's modification time. Before executing: changed since then (user saved it meanwhile) → do not execute or overwrite; warn in your return message and stop.
+- Execute headless in the plan's environment: `jupyter nbconvert --to notebook --execute --inplace <nb>`. `jupyter` missing → report and stop (`blocked`). Cell error → fix or remove your cells and re-run; still failing → record status `failed`.
+- Record: write at the given path, this format:
+
+```
+# NN: <question>: status (done | failed | abandoned)
+## Follows from
+## What was run        notebook path + heading, inputs
+## Result              numbers, figure/table paths
+## Interpretation
+## Caveats
+## Next                options proposed; option chosen
+```
+
+- Log: append one entry to `poe/docs/ANALYSIS_LOG.md` (absent → create with heading `# Analysis log`), this format, `By: poe`, `Follows: -` if none:
+
+```
+## YYYY-MM-DD: <question>  [<slug>/NN | manual]
+- Result: one line
+- By: poe | user | other agent
+- Follows: <slug>/NN
+- Links: record, notebook#heading, figures
+```
+
+- Return: ≤5 bullets (status, result, record path, notebook heading, warnings incl. "reload notebook in Jupyter") + 2–3 proposed next analyses.
