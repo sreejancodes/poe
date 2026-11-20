@@ -60,6 +60,7 @@ Plugin skills are namespaced, so the command is `/poe:poe`:
 /poe:poe execute poe/hpv-orf-analysis/plan.md
 /poe:poe resume poe/hpv-orf-analysis/plan.md
 /poe:poe report poe/hpv-orf-analysis/plan.md
+/poe:poe results
 /poe:poe analyse poe/hpv-orf-analysis/plan.md
 /poe:poe analyse catch-up
 /poe:poe note Plotted ORF lengths per genotype in notebooks/hpv-orf-analysis/orfs.ipynb
@@ -71,6 +72,7 @@ Plugin skills are namespaced, so the command is `/poe:poe`:
 - **Execute** hands each work unit to a fresh `poe:phase-worker` subagent, which writes progress notes as it works. The orchestrator verifies each unit before moving on.
 - **Resume** uses the status file and progress notes to continue safely.
 - **Report** copies the session's logs and (re)builds `report.html`, a step-by-step view of what the orchestrator and each worker did. Execute and resume also build it automatically at the end, after `summary.md` and the log copy; if the build fails, the reply says so and the task carries on.
+- **Results** (re)builds the results page `poe/docs/all_analysis.html`: every analysis result in the project, grouped by task and thread, with figures inline. See [Analysis](#analysis).
 - **Analyse** runs data analyses one at a time in a Jupyter notebook; you pick each next one. With no plan, or a plan missing analysis fields, it asks you the open decisions first instead of guessing. See [Analysis](#analysis).
 - **Analyse catch-up** finds notebook cells poe did not write and logs them, with your confirmation.
 - **Note** logs analysis you did yourself, in your own words.
@@ -88,10 +90,12 @@ One task can hold both coding and analysis. Use `plan`, `split` and `execute` to
 - **Each analysis**: a fresh worker adds cells under a heading `## NN: <question>`, runs the notebook headless (`jupyter nbconvert --to notebook --execute --inplace`), writes a record `poe/<task-slug>/analysis/NN-name.md` and appends an entry to `poe/docs/ANALYSIS_LOG.md`. It proposes 2-3 next analyses; pick one or say done. Done writes `summary.md`, copies logs and builds the report, as execute does. `NN` continues across runs.
 - **Notebook rules**: cells poe writes are tagged `poe:<task-slug>/<NN>` in cell metadata. New cells go into the existing notebook; a new notebook is started only when a full re-run takes over ~5 min or the topic changes, and the record says why. Failed attempts are removed from the notebook and described in the record. Notebooks, figures and intermediates live in the project path from `plan.md`, not under `poe/`.
 - **Open notebooks**: `--inplace` rewrites the file, so save your edits before an analysis runs. The worker stops with a warning if the notebook was saved by someone else after it read it.
+- **Results page**: `poe/docs/all_analysis.html` shows every analysis result (poe and untracked) in one page, built from the log and records: a section per task, each analysis nested under the one it follows, figures named in records shown inline, the latest marked. Not a chronology (that is the log) and not an agent-activity report (that is `report.html`). Rebuilt after every analysis, `note` and catch-up; `results` rebuilds it on demand. If the build fails, the reply says so and the task carries on.
 - **Analysis log**: `poe/docs/ANALYSIS_LOG.md` is one chronology for the whole project, across tasks, meant for writing up. Each entry gives the date, question, a one-line result, who did it (poe, user, other agent) and links.
-- **Untracked work** (analysis done outside poe, by you or another agent) shows up as untagged code cells. Every `analyse` run starts with a catch-up check (`analyse catch-up` runs it alone): for each group of adjacent untagged cells it drafts a `manual` log entry, asks you to confirm or fix it, appends it and tags the cells `poe:manual` so they are not asked about again. `note <text>` logs such work directly in your words.
+- **Untracked work** (analysis done outside poe, by you or another agent) shows up as untagged code cells. Every `analyse` run starts with a catch-up check (`analyse catch-up` runs it alone): for each group of adjacent untagged cells it drafts a `manual` log entry, asks you to confirm or fix it, appends it and tags the cells `poe:manual` so they are not asked about again. `note <text>` logs such work directly in your words. Entries get `Follows: <task-slug>/NN` when the cells sit right after a poe analysis's cells or you name it, so the results page shows them in context; otherwise they go under the task whose notebook they are in, or under "Untracked work".
 - **Well-defined analyses** can also be planned as work units in `split`/`execute`; the worker follows the same notebook rules and writes a record and log entry. Units that write the log run one at a time.
-- `report.html` shows analysis records as text; notebooks and figures are not embedded.
+- `report.html` shows analysis records as text; notebooks and figures are not embedded (the results page shows figures).
+- **Figure paths** in records and log `Links` are relative to the directory Claude Code was started in; the results page links them relative to `poe/docs/`, so moving figures breaks them.
 
 Record, log entry and notebook rules in full: [`skills/poe/SKILL.md`](skills/poe/SKILL.md).
 
@@ -100,10 +104,11 @@ Record, log entry and notebook rules in full: [`skills/poe/SKILL.md`](skills/poe
 Everything for one task is written under `poe/<task-slug>/` in the directory where Claude Code was started. `poe/` is created if it does not exist. `poe/docs/` is shared across tasks, so `docs` is not used as a task slug.
 
 ```
-poe/docs/              shared across tasks, written by grill, analyse and note, created when first needed
+poe/docs/              shared across tasks, written by grill, analyse, note and results, created when first needed
   GLOSSARY.md          project terms
   adr/NNNN-slug.md     architecture decision records
   ANALYSIS_LOG.md      project-wide analysis log, date order, all tasks
+  all_analysis.html    results page: every analysis result, project-wide, script-built
 poe/<task-slug>/
   plan.md              what will be built and why
   phases/NN-name.md    one brief per phase, listing its work units
@@ -124,6 +129,14 @@ python3 <plugin>/skills/poe/scripts/poe_report.py poe/<task-slug>
 ```
 
 `<plugin>` is this repository, or the installed plugin directory. The script writes `poe/<task-slug>/report.html` and prints its path. It is a single HTML file with no external resources, so it opens offline.
+
+The results page by hand, from the directory that holds `poe/`:
+
+```sh
+python3 <plugin>/skills/poe/scripts/poe_results.py .
+```
+
+It writes `poe/docs/all_analysis.html` (overwriting it) and prints its path. Same format as the report: one HTML file, inline CSS, no JavaScript; figures are linked files, not embedded.
 
 Tasks created by older versions in `plans/` can be moved with `mv plans/<slug> poe/<slug>`.
 
@@ -156,6 +169,7 @@ The `CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable takes precedence over
 skills/poe/SKILL.md               the /poe:poe orchestrator skill
 skills/poe/GRILLING.md            the interview method used by grill
 skills/poe/scripts/poe_report.py  builds report.html for a task
+skills/poe/scripts/poe_results.py builds the results page poe/docs/all_analysis.html
 agents/phase-worker.md            the worker subagent
 ```
 

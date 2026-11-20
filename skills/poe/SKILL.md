@@ -1,7 +1,7 @@
 ---
 name: poe
 description: Plan, decompose, and execute complex coding or analysis tasks in phases using fresh-context subagents and file-based progress notes. Use when the user explicitly requests staged multi-agent work, context-conscious orchestration, or continuation of an existing phase plan.
-argument-hint: "[plan|grill|split|execute|resume|report|analyse|note] [task description or plan path]"
+argument-hint: "[plan|grill|split|execute|resume|report|results|analyse|note] [task description or plan path]"
 disable-model-invocation: true
 ---
 
@@ -30,9 +30,11 @@ Be concise. Sacrifice grammar for the sake of concision.
 - `resume [plan-path]`: read `status.md` and the progress notes, compare them with the actual files, tests, and git diff, reconcile discrepancies, and continue only incomplete approved work. When it finishes or stops, write `summary.md`, copy the logs, and build the report as in Execute mode step 9. Task with analyses → also read the latest `analysis/` record and continue the Analyse loop (step 3).
 - `report [plan-path]`: copy this session's logs as in the Logs section, build the report as in the Report section, and give the user the path of `report.html`. Do not edit the task's other files or any implementation files.
   Reply: report path + any failure, nothing else.
-- `analyse [task | plan-path]`: run analyses one at a time on a task, user picks each next one (see Analyse mode). May write `poe/<slug>/` files, `poe/docs/ANALYSIS_LOG.md`, and (via workers) notebooks/outputs under the plan's project path; no other implementation files.
-- `analyse catch-up`: catch-up check only (see Catch-up check). May write only `poe/docs/ANALYSIS_LOG.md` and `poe:manual` cell tags.
-- `note <text>`: log untracked work in the user's words (see Note mode). May write only `poe/docs/ANALYSIS_LOG.md` and `poe:manual` cell tags.
+- `results`: build the results page (see Results page). May write only `poe/docs/all_analysis.html`.
+  Reply: page path + any failure, nothing else.
+- `analyse [task | plan-path]`: run analyses one at a time on a task, user picks each next one (see Analyse mode). May write `poe/<slug>/` files, `poe/docs/ANALYSIS_LOG.md`, `poe/docs/all_analysis.html`, and (via workers) notebooks/outputs under the plan's project path; no other implementation files.
+- `analyse catch-up`: catch-up check only (see Catch-up check). May write only `poe/docs/ANALYSIS_LOG.md`, `poe/docs/all_analysis.html`, and `poe:manual` cell tags.
+- `note <text>`: log untracked work in the user's words (see Note mode). May write only `poe/docs/ANALYSIS_LOG.md`, `poe/docs/all_analysis.html`, and `poe:manual` cell tags.
 - For small, single-file or tightly coupled changes, recommend doing the work directly instead of forcing subagents. If the user still requests orchestration, comply.
 
 ## Files
@@ -40,10 +42,11 @@ Be concise. Sacrifice grammar for the sake of concision.
 Everything for one task lives in `poe/<short-task-slug>/`, relative to the current working directory (the directory the session was started in, even if that is not the repository root). Create `poe/` and the task directory if they do not exist (`mkdir -p`). Never overwrite the directory of a different task; pick a distinct slug. Slug `docs` is reserved.
 
 ```
-poe/docs/              shared across tasks, created only when first needed (written by `grill`, `analyse`, `note`)
+poe/docs/              shared across tasks, created only when first needed (written by `grill`, `analyse`, `note`, `results`)
   GLOSSARY.md          project terms
   adr/NNNN-slug.md     architecture decision records
   ANALYSIS_LOG.md      project-wide analysis log, date order, all tasks
+  all_analysis.html    results page: every analysis result, project-wide, script-built
 poe/<short-task-slug>/
   plan.md              what will be built and why (written by `plan`)
   phases/NN-name.md    one brief per phase, listing its work units (written by `split`)
@@ -128,7 +131,7 @@ One analysis at a time; user picks each next one. `NN` continues across `analyse
 2. Catch-up check (below).
 3. Dispatch fresh `phase-worker` (as Execute step 2) with: question for this analysis (first: plan's `First analysis`; later: user's pick), notebook path, record path `analysis/NN-name.md`, previous record path, log path `poe/docs/ANALYSIS_LOG.md`.
 4. Worker: add tagged cells under a markdown heading `## NN: <question>`, execute, write record, append log entry, return ≤5 bullets + 2–3 proposed next analyses.
-5. Orchestrator: verify notebook executed without error (no `"output_type": "error"`) and record exists; update `status.md`; ask next analysis via `AskUserQuestion` (worker's options + done); write the chosen option into the record's `## Next`; repeat from 3.
+5. Orchestrator: verify notebook executed without error (no `"output_type": "error"`) and record exists; update `status.md`; rebuild results page (see Results page); ask next analysis via `AskUserQuestion` (worker's options + done); write the chosen option into the record's `## Next`; repeat from 3.
 6. Need a tool → `plan`/`split`/`execute` on same task dir; phases and analyses share `status.md`. Back → `analyse` again.
 7. User says done → `summary.md`, logs, report as in Execute step 9.
 
@@ -171,15 +174,19 @@ Appended to `poe/docs/ANALYSIS_LOG.md` (create with `# Analysis log` heading if 
 - Runs at start of every `analyse`; also `analyse catch-up` alone.
 - Scan notebooks under the plan's notebook/output path for untagged code cells; a notebook with no tagged cells at all counts as one group.
 - Per group of adjacent untagged cells: draft `manual` log entry from code + outputs, ask user to confirm/fix wording, append. Tag cells `poe:manual` so they are not re-asked.
+- `Follows: <slug>/NN` set when group sits right after a `poe:<slug>/<NN>` group or user names it; else `-`.
+- After log writes: rebuild results page (see Results page).
 
 ## Note mode
 
 - Append `manual` log entry: user's text as `<question>`, `Result` only if the text states one; link notebook if named or unambiguous; tag matching untagged cells `poe:manual`. No worker. Reply: entry path only.
+- `Follows: <slug>/NN` set when the tagged cells sit right after a `poe:<slug>/<NN>` group or user names it; else `-`.
+- After log write: rebuild results page (see Results page).
 - Logs copied into the active task if unambiguous; otherwise skipped.
 
 ## Logs
 
-At the end of every mode (`plan`, `grill`, `split`, `execute`, `resume`, `report`, `analyse`, `note`), and whenever execution stops for user input, copy this session's transcripts into the task directory:
+At the end of every mode (`plan`, `grill`, `split`, `execute`, `resume`, `report`, `results`, `analyse`, `note`), and whenever execution stops for user input, copy this session's transcripts into the task directory:
 
 ```sh
 dest="poe/<short-task-slug>/logs/${CLAUDE_SESSION_ID}"
@@ -203,6 +210,18 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/poe_report.py" poe/<short-task-slug>
 
 - The script writes `poe/<short-task-slug>/report.html` and prints its path. Re-running it replaces the earlier report.
 - If it fails (for example, `python3` is missing or the command is refused), say so in the reply and carry on. A missing report never blocks the task.
+
+## Results page
+
+In `results` mode, and after log writes in Analyse step 5, Note mode, and Catch-up check, build the results page from `poe/docs/ANALYSIS_LOG.md` and every task's `analysis/` records:
+
+```sh
+python3 "${CLAUDE_SKILL_DIR}/scripts/poe_results.py" .
+```
+
+- Writes `poe/docs/all_analysis.html` (creates it if absent), prints its path. Re-running replaces it.
+- Fails → say so in the reply and carry on. A missing results page never blocks the task.
+- `results` mode: logs copied into the active task if unambiguous; otherwise skipped.
 
 ## Progress notes
 

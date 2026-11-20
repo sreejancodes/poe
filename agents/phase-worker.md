@@ -38,6 +38,7 @@ Apply when the brief gives a notebook path. Brief also gives: question, `NN`, re
 ## Next                options proposed; option chosen
 ```
 
+- Figure/table paths in `## Result` and log `Links`: relative to the session dir (where `poe/` lives), e.g. `notebooks/<slug>/fig.png`; the results page reads them.
 - Log: append one entry to `poe/docs/ANALYSIS_LOG.md` (absent → create with heading `# Analysis log`), this format, `By: poe`, `Follows: -` if none:
 
 ```
