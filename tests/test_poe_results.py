@@ -131,6 +131,22 @@ class RenderFixtureTest(unittest.TestCase):
         )
         self.assertNotIn('<img src="../../notebooks/rna-qc/figures/umap.png"', self.html)
 
+    def test_figure_size_capped(self):
+        self.assertIn("max-width: min(100%, 7.2in); max-height: 3.5in; width: auto; height: auto;", self.html)
+        self.assertIn(".figures { display: flex; flex-wrap: wrap;", self.html)
+
+    def test_figures_wrapped(self):
+        block = analysis_block(self.html, "analysis-rna-qc-01")
+        self.assertIn('<div class="figures"><figure><a href="../../notebooks/rna-qc/figures/counts.png">', block)
+        missing = analysis_block(self.html, "analysis-rna-qc-02")
+        self.assertIn('<div class="figures"><p><a class="missing"', missing)
+
+    def test_no_empty_figures_wrapper(self):
+        self.assertNotIn('<div class="figures"></div>', self.html)
+        block = analysis_block(self.html, "analysis-clustering-01")
+        block = block[:block.index('<div class="links">')]
+        self.assertNotIn('class="figures"', block)
+
     def test_manual_entry_placed_by_notebook_in_task_section(self):
         clustering = self.html[self.html.index('id="task-clustering"'):self.html.index('id="task-rna-qc"')]
         self.assertIn("Tried resolution 0.5", clustering)
@@ -182,6 +198,22 @@ class RenderFixtureTest(unittest.TestCase):
         code, _, _ = run_main([str(self.session_dir)])
         self.assertEqual(code, 0)
         self.assertEqual(self.page_path.read_bytes(), first)
+
+
+class RenderAnalysisFiguresTest(unittest.TestCase):
+    def render(self, figures):
+        analysis = poe_results.Analysis(key="t/01", anchor="analysis-t-01", question="Q", figures=figures)
+        return poe_results.render_analysis(FIXTURE_SESSION, analysis)
+
+    def test_two_figures_share_one_wrapper(self):
+        html = self.render(["notebooks/rna-qc/figures/counts.png", "notebooks/rna-qc/figures/umap.png"])
+        self.assertEqual(html.count('<div class="figures">'), 1)
+        wrapper = html[html.index('<div class="figures">'):]
+        self.assertIn("<figure>", wrapper)
+        self.assertIn('<a class="missing" href="../../notebooks/rna-qc/figures/umap.png">', wrapper)
+
+    def test_no_figures_no_wrapper(self):
+        self.assertNotIn('class="figures"', self.render([]))
 
 
 class MarkdownTest(unittest.TestCase):

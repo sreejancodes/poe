@@ -464,8 +464,10 @@ nav ul { margin: 4px 0; padding-left: 18px; }
 .table-wrap th { background: var(--code-bg); }
 code { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   background: var(--code-bg); padding: 0 3px; border-radius: 3px; }
-figure { margin: 8px 0; }
-figure img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.figures { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; }
+figure { margin: 8px 0; max-width: 100%; }
+figure img { max-width: min(100%, 7.2in); max-height: 3.5in; width: auto; height: auto;
+  border: 1px solid var(--border); border-radius: 4px; background: #fff; }
 figcaption { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .links { font-size: 12px; overflow-wrap: anywhere; }
 .missing { color: var(--error); }
@@ -738,7 +740,9 @@ def render_analysis(session_dir: Path, analysis: Analysis) -> str:
         parts.append(f'<div class="result">{render_markdown(analysis.result)}</div>')
     if analysis.interpretation:
         parts.append(f'<div class="interpretation">{render_markdown(analysis.interpretation)}</div>')
-    parts += [render_figure(session_dir, path) for path in analysis.figures]
+    if analysis.figures:
+        figures = "".join(render_figure(session_dir, path) for path in analysis.figures)
+        parts.append(f'<div class="figures">{figures}</div>')
 
     links = []
     if analysis.record:
