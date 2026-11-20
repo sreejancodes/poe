@@ -42,7 +42,7 @@ INTERNAL_RECORD_TYPES = {
 INTERNAL_RECORD_PREFIXES = ("file-history-",)
 
 TASK_DOCUMENT_NAMES = ["plan.md", "status.md", "summary.md"]
-TASK_DOCUMENT_FOLDERS = ["phases", "progress"]
+TASK_DOCUMENT_FOLDERS = ["phases", "progress", "analysis"]
 
 # Only the start of a thinking block's signature is decoded (signatures can be
 # several KB). Must be a multiple of 4 so the cut prefix is valid base64.

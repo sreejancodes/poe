@@ -1,0 +1,69 @@
+diff --git a/skills/poe/SKILL.md b/skills/poe/SKILL.md
+index 817751a..7dd5fa3 100644
+--- a/skills/poe/SKILL.md
++++ b/skills/poe/SKILL.md
+@@ -11,6 +11,14 @@ User request: $ARGUMENTS
+ 
+ You are the **orchestrator**. Keep the parent conversation focused on decisions, dependency management, integration, and verification. Delegate bounded implementation or research to fresh-context subagents rather than accumulating their intermediate work in the parent context.
+ 
++## Output style
++
++Be concise. Sacrifice grammar for the sake of concision.
++
++- Applies to every reply and every file poe writes for the user: `plan.md`, phase briefs, `status.md`, `summary.md`.
++- Bullets and fragments over prose.
++- Never drop required content: acceptance criteria, risks, verification commands, exact file paths, test results, unknowns.
++
+ ## Operating modes
+ 
+ - `plan <task>` (or a task description without a mode): write `plan.md` only, then stop so the user can review it. Do not split it into phases and do not edit implementation files.
+@@ -42,14 +50,20 @@ poe/<short-task-slug>/
+ ## Plan mode: write `plan.md`
+ 
+ 1. Inspect only the relevant repository context, instructions, tests, and environment. Use read-only exploration subagents when exploration would otherwise overwhelm parent context.
+-2. Write `poe/<short-task-slug>/plan.md` from what the user wants to do: objective, scope and exclusions, assumptions, the approach, acceptance criteria, risks, and how the result will be tested or validated. This file describes the work itself; it does not mention phases, subagents, or token budgets.
++2. Write `poe/<short-task-slug>/plan.md` from what the user wants to do: objective, scope and exclusions, assumptions, the approach, acceptance criteria, risks, and how the result will be tested or validated. This file describes the work itself; it does not mention phases, subagents, or token budgets. Keep it short: do not restate the request, and give background only where it shapes a decision.
+ 3. **Do not overengineer.** Plan the simplest approach that meets the stated requirements:
+    - Build only what the user asked for. No speculative features, configuration options, plugin systems, or abstraction layers added "for later".
+    - Prefer the tools, libraries, and patterns the repository already uses over introducing new ones.
+    - The resulting code must stay readable by humans: plain control flow, descriptive names, small functions, and comments only where the reason is not obvious. Prefer a few clear lines over a clever one.
+    - Keep the process as light as the code. Do not add steps, files, or reviews that the task does not need.
+ 4. Do not silently choose a major architecture if it needs user approval; ask before writing it into the plan.
+-5. Show a short summary of the plan, state the path of `plan.md`, and stop. The user reviews the file and may ask for changes; apply requested changes to `plan.md` and stop again. Do not proceed to the split until the user runs `split`.
++5. Show a short summary of the plan, state the path of `plan.md`, and stop. Point to the file; do not repeat its contents. The user reviews the file and may ask for changes; apply requested changes to `plan.md` and stop again. Do not proceed to the split until the user runs `split`. End the reply with a `Next:` line and a fenced block holding the exact command with the full plan path, so it can be pasted into a fresh `/clear`ed session. Nothing after the block:
++   ````
++   Next:
++   ```
++   /poe:poe split poe/<short-task-slug>/plan.md
++   ```
++   ````
+ 
+ ## Split mode: split `plan.md` into phases and work units
+ 
+@@ -60,7 +74,13 @@ Read `plan.md` as it currently is on disk, including any edits the user made by
+ 3. Identify which units can run in parallel because they do not modify overlapping files or share mutable state. Run dependent or overlapping units sequentially, or isolate them in separate git worktrees and integrate deliberately.
+ 4. Write one brief per phase at `phases/NN-name.md`. For each unit give: goal, inputs and files to read, files it may change, explicit non-goals, exact verification commands, completion criteria, and its progress-notes path.
+ 5. Write `status.md` listing every phase and unit as pending.
+-6. Show the phase split, state where the files are, and ask for approval. Do not start implementation in `split` mode.
++6. Show the phase split, state where the files are, and ask for approval. Point to the files; do not repeat their contents. Do not start implementation in `split` mode. End the reply with the same `Next:` line and fenced block as Plan mode step 5, holding the execute command. Nothing after the block:
++   ````
++   Next:
++   ```
++   /poe:poe execute poe/<short-task-slug>/plan.md
++   ```
++   ````
+ 
+ ## Execute mode
+ 
+@@ -70,9 +90,9 @@ Read `plan.md` as it currently is on disk, including any edits the user made by
+ 4. The worker implements or analyzes only its assigned unit and runs the relevant tests. It writes its progress notes **as it works**, not only at the end: it updates the notes file after each meaningful step, so that the notes are current if the worker stops, is compacted, or fails.
+ 5. Run independent, non-overlapping units in parallel only when safe. Never silently overwrite another agent's edits.
+ 6. Check the worker's claims against the actual files, test outputs, and git diff. For significant or high-risk changes, use a separate fresh-context reviewer before marking the unit verified. Fix or reassign failed units with a new scoped brief.
+-7. Update `status.md` after every unit. Keep the parent response concise: phase, tests, blockers, and next action. Reference files rather than returning large transcripts.
++7. Update `status.md` after every unit. Keep the parent response concise: phase, tests, blockers, and next action. Reference files rather than returning large transcripts or repeating file contents.
+ 8. Move to the next approved phase after verification. Stop for genuinely ambiguous requirements, security-sensitive changes, destructive operations, deployments, or decisions beyond the approved plan.
+-9. At completion, run integration tests, review the full change set, and report what passed, what remains uncertain, and where the files were saved. Write the same report to `summary.md` (what passed, what remains uncertain, blockers, and file locations), overwriting any earlier one; `status.md` stays the source of truth for state. Then copy the logs (see Logs) and build the report (see Report).
++9. At completion, run integration tests, review the full change set, and report what passed, what remains uncertain, and where the files were saved; point to files rather than repeating their contents. Write the same report to `summary.md` (what passed, what remains uncertain, blockers, and file locations), overwriting any earlier one; `status.md` stays the source of truth for state. Then copy the logs (see Logs) and build the report (see Report).
+ 
+ ## Logs
+ 

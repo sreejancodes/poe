@@ -174,6 +174,20 @@ class LoadTaskWithoutLogsTest(unittest.TestCase):
         self.assertEqual(task.skipped, 0)
         self.assertEqual(task.documents, [("plan.md", "# Plan\n")])
 
+    def test_analysis_records_listed_and_rendered_in_file_order(self):
+        with tempfile.TemporaryDirectory() as temp:
+            task_dir = Path(temp) / "with-analysis"
+            (task_dir / "analysis").mkdir(parents=True)
+            (task_dir / "plan.md").write_text("# Plan\n", encoding="utf-8")
+            (task_dir / "analysis" / "02-y.md").write_text("# 02: y\n", encoding="utf-8")
+            (task_dir / "analysis" / "01-x.md").write_text("# 01: x\n", encoding="utf-8")
+            task = poe_report.load_task(task_dir)
+        paths = [path for path, _ in task.documents]
+        self.assertEqual(paths, ["plan.md", "analysis/01-x.md", "analysis/02-y.md"])
+        documents = section(poe_report.render_report(task, generated="2026-01-02 00:00 UTC"), "documents")
+        self.assertLess(documents.index("analysis/01-x.md"), documents.index("analysis/02-y.md"))
+        self.assertIn("# 01: x", documents)
+
     def test_missing_task_dir_raises(self):
         with self.assertRaises(FileNotFoundError):
             poe_report.load_task(FIXTURE_TASK / "does-not-exist")
