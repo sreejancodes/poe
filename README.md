@@ -114,7 +114,7 @@ poe/<task-slug>/
   logs/<session-id>/   copies of the Claude Code transcripts (.jsonl) of each session, including worker subagents
 ```
 
-The copied logs contain the full conversation, including file contents and command output, and so does `report.html`. Normally add `poe/*/logs/` and `poe/*/report.html` to `.gitignore`. Do not ignore all of `poe/`, so that `poe/docs/` stays in git.
+Commit all of `poe/`, including `logs/` and `report.html`. Together with the plan, briefs and progress notes, the transcripts are what make an agentic workflow reproducible: anyone can see what was asked, what each agent did and why. The copied logs contain the full conversation, including file contents and command output, and so does `report.html`. Check them for secrets or data that must not leave the machine before pushing, and add only those paths to `.gitignore` if needed. Do not ignore all of `poe/`, so that `poe/docs/` stays in git.
 
 To build the report by hand, without a Claude Code session (needs Python 3.9 or later, standard library only):
 
