@@ -158,13 +158,14 @@ def section(sections: Dict[str, str], name: str) -> str:
     return ""
 
 
-def first_paragraph(text: str) -> str:
+def first_block(text: str) -> str:
+    """The lines of text up to its first blank line (a paragraph or a list)."""
     lines = []
     for line in text.strip().splitlines():
         if not line.strip():
             break
-        lines.append(line.strip())
-    return " ".join(lines)
+        lines.append(line.rstrip())
+    return "\n".join(lines)
 
 
 def parse_follows_from(text: str, slug: str) -> Optional[str]:
@@ -229,7 +230,7 @@ def load_record(path: Path, slug: str, number: int) -> Optional[Analysis]:
         number=number,
         status=status,
         result=result,
-        interpretation=first_paragraph(section(sections, "interpretation")),
+        interpretation=first_block(section(sections, "interpretation")),
         follows=parse_follows_from(section(sections, "follows from"), slug),
         record=f"poe/{slug}/analysis/{path.name}",
         notebook=notebook,
@@ -423,11 +424,13 @@ CSS = """
 :root {
   --bg: #f7f7f8; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b73;
   --border: #dcdce0; --link: #0b5cad; --latest: #2e8b57; --error: #c62828; --thread: #c9c9d0;
+  --code-bg: #f0f0f3;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #17171a; --panel: #212125; --text: #e6e6ea; --muted: #9d9da6;
     --border: #3a3a40; --link: #7ab4ff; --latest: #5cc28a; --error: #ff6b6b; --thread: #4a4a52;
+    --code-bg: #2c2c31;
   }
 }
 * { box-sizing: border-box; }
@@ -449,8 +452,18 @@ nav ul { margin: 4px 0; padding-left: 18px; }
 .badge { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 11px; font-weight: 600;
   margin-left: 6px; border: 1px solid var(--border); color: var(--muted); }
 .badge.latest { color: #fff; background: var(--latest); border-color: var(--latest); }
-.result { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
+.result { overflow-wrap: anywhere; margin: 6px 0; }
 .interpretation { margin: 6px 0; color: var(--muted); }
+.result p, .interpretation p { margin: 4px 0; }
+.result ul, .result ol, .interpretation ul, .interpretation ol { margin: 4px 0; padding-left: 22px; }
+.result li, .interpretation li { margin: 2px 0; }
+.md-heading { font-size: 13px; margin: 10px 0 4px; }
+.table-wrap { overflow-x: auto; margin: 6px 0; }
+.table-wrap table { border-collapse: collapse; font-size: 13px; overflow-wrap: normal; }
+.table-wrap th, .table-wrap td { border: 1px solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; }
+.table-wrap th { background: var(--code-bg); }
+code { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 0 3px; border-radius: 3px; }
 figure { margin: 8px 0; }
 figure img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
 figcaption { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
@@ -469,6 +482,221 @@ def page_href(path: str) -> str:
     if Path(path).is_absolute():
         return quote(path)
     return quote("../../" + path)
+
+
+# Records are agent-written markdown, so only a small subset is rendered:
+# paragraphs, lists nested by indent, pipe tables, **bold**, *italic*, `code`
+# and [links](target). Text is always HTML-escaped before markup is added;
+# anything else shows as escaped text.
+
+LIST_ITEM = re.compile(r"^(\s*)([-*+]|\d+[.)])\s+(.*)$")
+TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
+INLINE_CODE = re.compile(r"`([^`]+)`")
+INLINE_LINK = re.compile(r"!?\[([^\]]*)\]\(([^)\s]+)\)")
+# Emphasis markers must not touch a letter or digit, so A*02:01 or a*b stay literal.
+BOLD = re.compile(r"(?<![\w*])\*\*(?=\S)(.+?)(?<=\S)\*\*(?![\w*])")
+ITALIC = re.compile(r"(?<![\w*])\*(?=[^\s*])([^*]*?)(?<=[^\s*])\*(?![\w*])")
+HEADING = re.compile(r"^\s*#{1,6}\s+(.*?)\s*#*\s*$")
+URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+PLACEHOLDER = re.compile(r"\x00(\d+)\x00")
+NESTED_INDENT = 2  # a line indented this much past a list item belongs to that item
+
+
+def link_href(target: str) -> Optional[str]:
+    """Href for a markdown link target; None for a scheme other than http(s) or mailto."""
+    if target.startswith("#"):
+        return target
+    if URL_SCHEME.match(target):
+        if target.lower().startswith(("http://", "https://", "mailto:")):
+            return target
+        return None
+    path, hash_sign, fragment = target.partition("#")
+    return page_href(path) + hash_sign + quote(fragment)
+
+
+def render_inline(text: str) -> str:
+    """Escape one line of text, then render `code`, [links](target), **bold** and *italic*.
+
+    Code spans and links are rendered first and parked as numbered
+    placeholders, so bold and italic never reach inside them.
+    """
+    rendered_pieces: List[str] = []
+
+    def park(rendered: str) -> str:
+        rendered_pieces.append(rendered)
+        return f"\x00{len(rendered_pieces) - 1}\x00"
+
+    def restore(text_with_placeholders: str) -> str:
+        return PLACEHOLDER.sub(lambda match: rendered_pieces[int(match.group(1))], text_with_placeholders)
+
+    def emphasis(escaped: str) -> str:
+        escaped = BOLD.sub(r"<strong>\1</strong>", escaped)
+        return ITALIC.sub(r"<em>\1</em>", escaped)
+
+    def code(match) -> str:
+        return park(f"<code>{escape(match.group(1))}</code>")
+
+    def link(match) -> str:
+        label = restore(emphasis(escape(match.group(1)))) or escape(match.group(2))
+        href = link_href(match.group(2))
+        if href is None:
+            return park(label)
+        return park(f'<a href="{escape(href)}">{label}</a>')
+
+    text = text.replace("\x00", "")
+    text = INLINE_CODE.sub(code, text)
+    text = INLINE_LINK.sub(link, text)
+    return restore(emphasis(escape(text)))
+
+
+def indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def dedent(lines: List[str]) -> List[str]:
+    """Remove the indent all non-blank lines share."""
+    indents = [indent_of(line) for line in lines if line.strip()]
+    common = min(indents) if indents else 0
+    return [line[common:] if line.strip() else "" for line in lines]
+
+
+def is_table_start(lines: List[str], index: int) -> bool:
+    """A pipe table starts with a header row followed by a `|---|---|` row."""
+    if index + 1 >= len(lines):
+        return False
+    header, separator = lines[index], lines[index + 1]
+    return "|" in header and "|" in separator and bool(TABLE_SEPARATOR.match(separator))
+
+
+def table_cells(line: str) -> List[str]:
+    row = line.strip()
+    if row.startswith("|"):
+        row = row[1:]
+    if row.endswith("|"):
+        row = row[:-1]
+    return [cell.strip() for cell in row.split("|")]
+
+
+def render_table(lines: List[str], start: int) -> Tuple[str, int]:
+    """Render the table starting at lines[start]; return (html, index after it)."""
+    header = table_cells(lines[start])
+    index = start + 2  # skip the separator row
+    rows = []
+    while index < len(lines) and lines[index].strip() and "|" in lines[index]:
+        rows.append(table_cells(lines[index]))
+        index += 1
+    head = "".join(f"<th>{render_inline(cell)}</th>" for cell in header)
+    body = []
+    for row in rows:
+        row = row + [""] * (len(header) - len(row))
+        body.append("<tr>" + "".join(f"<td>{render_inline(cell)}</td>" for cell in row) + "</tr>")
+    return (
+        f'<div class="table-wrap"><table><thead><tr>{head}</tr></thead>'
+        f"<tbody>{''.join(body)}</tbody></table></div>",
+        index,
+    )
+
+
+def render_paragraph(lines: List[str], start: int) -> Tuple[str, int]:
+    """Render lines up to a blank line, list item or table; line breaks are kept."""
+    index = start
+    paragraph = []
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip() or (
+            index > start and (LIST_ITEM.match(line) or HEADING.match(line) or is_table_start(lines, index))
+        ):
+            break
+        paragraph.append(render_inline(line.strip()))
+        index += 1
+    return f"<p>{'<br>'.join(paragraph)}</p>", index
+
+
+def render_list(lines: List[str], start: int) -> Tuple[str, int]:
+    """Render the list starting at lines[start]; return (html, index after it).
+
+    Lines indented at least NESTED_INDENT past the list's items belong to the
+    item above them (sub-lists, tables, more text) and are rendered as blocks
+    inside it.
+    """
+    first_item = LIST_ITEM.match(lines[start])
+    list_indent = len(first_item.group(1))
+    ordered = first_item.group(2)[0].isdigit()
+
+    def is_sibling_item(line: str) -> bool:
+        item = LIST_ITEM.match(line)
+        return bool(
+            item
+            and list_indent <= len(item.group(1)) < list_indent + NESTED_INDENT
+            and item.group(2)[0].isdigit() == ordered
+        )
+
+    items: List[Tuple[List[str], List[str]]] = []  # (item text lines, nested lines)
+    index = start
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip():
+            next_index = index + 1
+            while next_index < len(lines) and not lines[next_index].strip():
+                next_index += 1
+            if next_index == len(lines):
+                break
+            next_line = lines[next_index]
+            if indent_of(next_line) >= list_indent + NESTED_INDENT:
+                items[-1][1].append("")
+            elif not is_sibling_item(next_line):
+                break
+            index = next_index
+        elif indent_of(line) >= list_indent + NESTED_INDENT:
+            items[-1][1].append(line)
+            index += 1
+        elif is_sibling_item(line):
+            items.append(([LIST_ITEM.match(line).group(3)], []))
+            index += 1
+        elif LIST_ITEM.match(line) or HEADING.match(line) or is_table_start(lines, index) or items[-1][1]:
+            break
+        else:  # unindented text right under an item continues its text
+            items[-1][0].append(line.strip())
+            index += 1
+
+    rendered_items = []
+    for text_lines, nested_lines in items:
+        nested = dedent(nested_lines)
+        while nested and nested[0].strip() and not LIST_ITEM.match(nested[0]) and not is_table_start(nested, 0):
+            text_lines.append(nested.pop(0).strip())
+        text = render_inline(" ".join(text_lines))
+        rendered_items.append(f"<li>{text}{render_blocks(nested)}</li>")
+    tag = "ol" if ordered else "ul"
+    return f"<{tag}>{''.join(rendered_items)}</{tag}>", index
+
+
+def render_blocks(lines: List[str]) -> str:
+    parts = []
+    index = 0
+    while index < len(lines):
+        if not lines[index].strip():
+            index += 1
+            continue
+        heading = HEADING.match(lines[index])
+        if heading:
+            rendered, index = f'<h4 class="md-heading">{render_inline(heading.group(1))}</h4>', index + 1
+        elif is_table_start(lines, index):
+            rendered, index = render_table(lines, index)
+        elif LIST_ITEM.match(lines[index]):
+            rendered, index = render_list(lines, index)
+        else:
+            rendered, index = render_paragraph(lines, index)
+        parts.append(rendered)
+    return "".join(parts)
+
+
+def render_markdown(text: str) -> str:
+    """Render record markdown (the subset above) as HTML; never raises."""
+    lines = [line.expandtabs(4).rstrip() for line in text.replace("\x00", "").splitlines()]
+    try:
+        return render_blocks(lines)
+    except Exception:  # loose markdown must never break the page: show it escaped
+        return f"<p>{'<br>'.join(escape(line) for line in lines)}</p>"
 
 
 def file_link(session_dir: Path, path: str, label: str) -> str:
@@ -507,9 +735,9 @@ def render_analysis(session_dir: Path, analysis: Analysis) -> str:
 
     parts = [f'<div class="{" ".join(classes)}" id="{escape(analysis.anchor)}">', f'<div class="head">{head}</div>']
     if analysis.result:
-        parts.append(f'<div class="result">{escape(analysis.result)}</div>')
+        parts.append(f'<div class="result">{render_markdown(analysis.result)}</div>')
     if analysis.interpretation:
-        parts.append(f'<p class="interpretation">{escape(analysis.interpretation)}</p>')
+        parts.append(f'<div class="interpretation">{render_markdown(analysis.interpretation)}</div>')
     parts += [render_figure(session_dir, path) for path in analysis.figures]
 
     links = []

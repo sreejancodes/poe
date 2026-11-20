@@ -161,11 +161,97 @@ class RenderFixtureTest(unittest.TestCase):
         self.assertNotIn("<script", self.html)
         self.assertIn("prefers-color-scheme: dark", self.html)
 
+    def test_result_markdown_rendered(self):
+        block = analysis_block(self.html, "analysis-clustering-01")
+        block = block[:block.index('<div class="links">')]
+        self.assertIn("<li><strong>Clusters</strong>: 12 at resolution 1.0<ul><li>", block)
+        self.assertIn("<th>Class</th><th>Samples</th><th>Obs</th>", block)
+        self.assertIn("<td>T cell</td><td>4</td><td>1200</td>", block)
+        self.assertIn("<code>sc.tl.leiden(adata, resolution=1.0)</code>", block)
+        self.assertIn('<a href="../../notebooks/clustering/leiden.ipynb">notebook</a>', block)
+        self.assertIn('<a href="https://scanpy.readthedocs.io/en/stable/">docs</a>', block)
+        self.assertIn("<em>expected</em>", block)
+        self.assertNotIn("**", block)
+        self.assertNotIn("| T cell", block)
+
+    def test_script_in_record_escaped(self):
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", self.html)
+
     def test_rerun_is_byte_identical(self):
         first = self.page_path.read_bytes()
         code, _, _ = run_main([str(self.session_dir)])
         self.assertEqual(code, 0)
         self.assertEqual(self.page_path.read_bytes(), first)
+
+
+class MarkdownTest(unittest.TestCase):
+    def test_asterisk_inside_word_is_not_emphasis(self):
+        html = poe_results.render_markdown("HLA-A*02-restricted, mostly A*02:01; **bold** and *it*")
+        self.assertEqual(html, "<p>HLA-A*02-restricted, mostly A*02:01; <strong>bold</strong> and <em>it</em></p>")
+
+    def test_heading_renders_and_ends_paragraph(self):
+        html = poe_results.render_markdown("### (a) Prior evidence\nEvery observation.\n- x\n### (b) Next")
+        self.assertEqual(
+            html,
+            '<h4 class="md-heading">(a) Prior evidence</h4><p>Every observation.</p>'
+            '<ul><li>x</li></ul><h4 class="md-heading">(b) Next</h4>',
+        )
+
+    def test_nested_list(self):
+        html = poe_results.render_markdown("- a\n  - b\n    - c\n- d")
+        self.assertEqual(html, "<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li><li>d</li></ul>")
+
+    def test_ordered_list(self):
+        self.assertEqual(poe_results.render_markdown("1. one\n2. two"), "<ol><li>one</li><li>two</li></ol>")
+
+    def test_list_items_separated_by_blank_lines_stay_one_list(self):
+        self.assertEqual(poe_results.render_markdown("- a\n\n- b"), "<ul><li>a</li><li>b</li></ul>")
+
+    def test_table_indented_under_bullet_renders_inside_item(self):
+        text = "- **Classes**: three\n  | Class | Obs |\n  |---|---|\n  | A | 2 |\n- next"
+        html = poe_results.render_markdown(text)
+        self.assertTrue(html.startswith("<ul><li><strong>Classes</strong>: three<div class=\"table-wrap\"><table>"))
+        self.assertIn("<thead><tr><th>Class</th><th>Obs</th></tr></thead><tbody><tr><td>A</td><td>2</td></tr>", html)
+        self.assertTrue(html.endswith("<li>next</li></ul>"))
+
+    def test_table_after_list_without_blank_line(self):
+        html = poe_results.render_markdown("- a\n| x | y |\n|---|---|\n| 1 | 2 |")
+        self.assertEqual(html.count("<table>"), 1)
+        self.assertIn("<ul><li>a</li></ul><div class=\"table-wrap\">", html)
+
+    def test_paragraph_keeps_line_breaks(self):
+        self.assertEqual(poe_results.render_markdown("one\ntwo\n\nthree"), "<p>one<br>two</p><p>three</p>")
+
+    def test_inline_markup(self):
+        html = poe_results.render_inline("**bold** *it* `a < b` [t](https://x.org/?a=1&b=2) [f](out/fig.svg#p)")
+        self.assertEqual(
+            html,
+            '<strong>bold</strong> <em>it</em> <code>a &lt; b</code> '
+            '<a href="https://x.org/?a=1&amp;b=2">t</a> <a href="../../out/fig.svg#p">f</a>',
+        )
+
+    def test_no_emphasis_inside_code_or_link_targets(self):
+        html = poe_results.render_inline("`**x**` [f](a_*b*_c.png)")
+        self.assertEqual(html, '<code>**x**</code> <a href="../../a_%2Ab%2A_c.png">f</a>')
+
+    def test_html_is_escaped(self):
+        html = poe_results.render_markdown("<script>alert(1)</script>\n- <b>x</b>")
+        self.assertNotIn("<script", html)
+        self.assertNotIn("<b>", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+
+    def test_unsafe_link_scheme_not_linked(self):
+        self.assertEqual(poe_results.render_inline("[x](javascript:alert)"), "x")
+
+    def test_malformed_tables_do_not_crash(self):
+        for text in ["| a | b |\n| x", "|---|\n|---|\n|", "| a |\n|---|\n| 1 | 2 | 3 |", "|\n|-|", "- |\n  |-|"]:
+            with self.subTest(text=text):
+                self.assertIsInstance(poe_results.render_markdown(text), str)
+        self.assertEqual(poe_results.render_markdown("| a | b |\n| x"), "<p>| a | b |<br>| x</p>")
+
+    def test_odd_markdown_does_not_crash(self):
+        text = "**open `code [link](\n\t- tab\n  * star\n      deep\n1) x\n\n\n   - late"
+        self.assertIsInstance(poe_results.render_markdown(text), str)
 
 
 class MainTest(unittest.TestCase):

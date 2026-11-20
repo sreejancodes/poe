@@ -131,7 +131,7 @@ One analysis at a time; user picks each next one. `NN` continues across `analyse
 2. Catch-up check (below).
 3. Dispatch fresh `phase-worker` (as Execute step 2) with: question for this analysis (first: plan's `First analysis`; later: user's pick), notebook path, record path `analysis/NN-name.md`, previous record path, log path `poe/docs/ANALYSIS_LOG.md`.
 4. Worker: add tagged cells under a markdown heading `## NN: <question>`, execute, write record, append log entry, return ≤5 bullets + 2–3 proposed next analyses.
-5. Orchestrator: verify notebook executed without error (no `"output_type": "error"`) and record exists; update `status.md`; rebuild results page (see Results page); ask next analysis via `AskUserQuestion` (worker's options + done); write the chosen option into the record's `## Next`; repeat from 3.
+5. Orchestrator: verify notebook executed without error (no `"output_type": "error"`), record exists, and figure paths in record end `.svg` (else send back to worker; Notebook rules); update `status.md`; rebuild results page (see Results page); ask next analysis via `AskUserQuestion` (worker's options + done); write the chosen option into the record's `## Next`; repeat from 3.
 6. Need a tool → `plan`/`split`/`execute` on same task dir; phases and analyses share `status.md`. Back → `analyse` again.
 7. User says done → `summary.md`, logs, report as in Execute step 9.
 
@@ -168,6 +168,24 @@ Appended to `poe/docs/ANALYSIS_LOG.md` (create with `# Analysis log` heading if 
 - New notebook only when: full re-run exceeds ~5 min, or question changes topic. Then save intermediates the next notebook loads; state the reason in the record.
 - No dead cells: failed attempts removed from notebook, described in record.
 - Execute headless: `jupyter nbconvert --to notebook --execute --inplace <nb>`, in the plan's environment; `jupyter` missing → report and stop. Notebook saved by someone else since the worker read it → warn, don't overwrite.
+- Figures paper-panel-ready:
+  - Setup cell at notebook top, tagged like other poe cells; missing → add it when next appending:
+    ```python
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({
+        "svg.fonttype": "none",
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size": 7,
+        "axes.titlesize": 7, "axes.labelsize": 7,
+        "xtick.labelsize": 7, "ytick.labelsize": 7, "legend.fontsize": 7,
+        "figure.figsize": (4, 3),
+    })
+    ```
+  - Save `.svg` only, no PNG: `fig.savefig("<name>.svg", bbox_inches="tight")`. Text stays editable (`svg.fonttype: none`), Arial 7 pt.
+  - Size via `figsize`: default 4x3 in; small/square ≤3.5 in wide (e.g. 3.5x3.5); multi-panel ≤7.2 in wide; never larger.
+  - Dense artists (scatter ≳10k points, images) `rasterized=True`.
+  - seaborn/pandas inherit rcParams; other libs: same SVG/size/font rules.
 
 ## Catch-up check
 

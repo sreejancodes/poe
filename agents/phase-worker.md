@@ -26,6 +26,24 @@ Apply when the brief gives a notebook path. Brief also gives: question, `NN`, re
 - No dead cells: remove failed attempts from the notebook; describe them in the record.
 - Before writing cells: note the notebook's modification time. Before executing: changed since then (user saved it meanwhile) → do not execute or overwrite; warn in your return message and stop.
 - Execute headless in the plan's environment: `jupyter nbconvert --to notebook --execute --inplace <nb>`. `jupyter` missing → report and stop (`blocked`). Cell error → fix or remove your cells and re-run; still failing → record status `failed`.
+- Figures paper-panel-ready:
+  - Setup cell at notebook top, tagged like your other cells; missing → add it:
+    ```python
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({
+        "svg.fonttype": "none",
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size": 7,
+        "axes.titlesize": 7, "axes.labelsize": 7,
+        "xtick.labelsize": 7, "ytick.labelsize": 7, "legend.fontsize": 7,
+        "figure.figsize": (4, 3),
+    })
+    ```
+  - Save `.svg` only, no PNG: `fig.savefig("<name>.svg", bbox_inches="tight")`. Text stays editable (`svg.fonttype: none`), Arial 7 pt.
+  - Size via `figsize`: default 4x3 in; small/square ≤3.5 in wide (e.g. 3.5x3.5); multi-panel ≤7.2 in wide; never larger.
+  - Dense artists (scatter ≳10k points, images) `rasterized=True`.
+  - seaborn/pandas inherit rcParams; other libs: same SVG/size/font rules.
 - Record: write at the given path, this format:
 
 ```
@@ -38,7 +56,7 @@ Apply when the brief gives a notebook path. Brief also gives: question, `NN`, re
 ## Next                options proposed; option chosen
 ```
 
-- Figure/table paths in `## Result` and log `Links`: relative to the session dir (where `poe/` lives), e.g. `notebooks/<slug>/fig.png`; the results page reads them.
+- Figure/table paths in `## Result` and log `Links`: relative to the session dir (where `poe/` lives), e.g. `notebooks/<slug>/fig.svg`; the results page reads them.
 - Log: append one entry to `poe/docs/ANALYSIS_LOG.md` (absent → create with heading `# Analysis log`), this format, `By: poe`, `Follows: -` if none:
 
 ```
